@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: k8s-validation-webhook-secret
+  namespace: default
+data:
+  tls_private_key: ${WEBHOOK_TLS_PRIVATE_KEY_B64}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-validation-webhook-config
+  namespace: default
+data:
+  tls_cert: |
+    ${WEBHOOK_TLS_CERT}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-validation-webhook
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-validation-webhook
+  template:
+    metadata:
+      labels:
+        app: k8s-validation-webhook
+    spec:
+      containers:
+        - name: k8s-validation-webhook
+          image: ${WEBHOOK_IMAGE}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 443
+          env:
+            #ANNOTATION_PREFIX_NAME_PLACEHOLDER
+              #ANNOTATION_PREFIX_VALUE_PLACEHOLDER
+            - name: TLS_CERT_FILE
+              value: /data/ssl_certs/server-cert.pem
+            - name: TLS_PRIVATE_KEY_FILE
+              value: /data/ssl_keys/server-key.pem
+            - name: LISTEN_PORT
+              value: "443"
+          volumeMounts:
+            - name: ssl-certs
+              mountPath: "/data/ssl_certs"
+              readOnly: true
+            - name: ssl-keys
+              mountPath: "/data/ssl_keys"
+              readOnly: true
+      volumes:
+        - name: ssl-certs
+          configMap:
+            name: k8s-validation-webhook-config
+            items:
+              - key: tls_cert
+                path: server-cert.pem
+        - name: ssl-keys
+          secret:
+            secretName: k8s-validation-webhook-secret
+            items:
+              - key: tls_private_key
+                path: server-key.pem
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-validation-webhook 
+  namespace: default
+spec:
+  ports:
+  - port: 443
+    targetPort: 443
+  selector:
+    app: k8s-validation-webhook
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: k8s-validation-webhook-cfg
+webhooks:
+  - name: k8s-validation-webhook.demo.com
+    clientConfig:
+      service:
+        name: k8s-validation-webhook
+        namespace: default
+        path: "/validate"
+      caBundle: ${WEBHOOK_CA_BUNDLE}
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["pods"]
+    failurePolicy: Fail
+    namespaceSelector:
+      matchLabels:
+        webhook: enabled
+---
+# ClusterRole and ClusterRoleBinding are required only for ingress validation.
+# Service account permissions are needed to read the cluster ingresses from all namespaces for the validation.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: k8s-validation-webhook
+rules:
+  - apiGroups: ["*"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-validation-webhook-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-validation-webhook
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default

@@ -1,0 +1,6 @@
+FROM alpine:latest
+
+ADD internal/k8s-validation-webhook/k8s-validation-webhook /k8s-validation-webhook
+
+
+ENTRYPOINT ["/k8s-validation-webhook", "webhook"]
