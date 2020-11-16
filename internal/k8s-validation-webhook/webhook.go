@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/api/admission/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes"
 )
 
 var webhookCmd = &cobra.Command{
@@ -91,7 +90,7 @@ func startWebhook(cmd *cobra.Command, args []string) {
 	}
 }
 
-func validate(ar v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
+func validate(ar v1beta1.AdmissionReview, config *config, clientSet *kubernetes.Clientset) *v1beta1.AdmissionResponse {
 	reviewResponse := v1beta1.AdmissionResponse{}
 	reviewResponse.Allowed = true
 
@@ -112,12 +111,12 @@ func validate(ar v1beta1.AdmissionReview) *v1beta1.AdmissionResponse {
 		reviewResponse.Allowed = false
 		reviewResponse.Result = &metav1.Status{Code: 403, Message: "runAsNonRoot not specified right"}
 		log.Infof("%q:%q:%q - %q", ar.Request.Kind.Kind, ar.Request.Namespace, ar.Request.Name, "runAsNonRoot not specified right")
-		return  &reviewResponse
+		return &reviewResponse
 	} else if *runAsNonRoot == true && (runAsUser != nil && *runAsUser == 0) {
 		reviewResponse.Allowed = false
 		reviewResponse.Result = &metav1.Status{Code: 403, Message: "runAsNonRoot specified, but runAsUser set to 0 (the root user)"}
 		log.Infof("%q:%q:%q - %q", ar.Request.Kind.Kind, ar.Request.Namespace, ar.Request.Name, "runAsNonRoot specified, but runAsUser set to 0 (the root user)")
-		return  &reviewResponse
+		return &reviewResponse
 	}
 
 	return &reviewResponse
